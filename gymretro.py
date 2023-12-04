@@ -1,13 +1,20 @@
-import retro
 import warnings
+
+warnings.filterwarnings("ignore")
+
+import retro
 import time
 import cv2
+import optuna
 import numpy as np
+import tensorflow as tf
 
 from gym import Env
 from gym.spaces import MultiBinary, Box
-
-warnings.filterwarnings("ignore")
+from stable_baselines import PPO2
+from stable_baselines.common.evaluation import evaluate_policy
+# from stable_baselines.common.monitor import Monitor
+from stable_baselines.common.vec_env import DummyVecEnv, VecFrameStack
 
 GAME_ITERATIONS = 1
 
@@ -63,7 +70,7 @@ class StreetFighter(Env):
                 obs, reward, done, info = self.step(self.action_space.sample())
                 if reward > 0:
                     print(reward)
-                # time.sleep(0.01)
+                time.sleep(0.01)
         self.close()
 
 
