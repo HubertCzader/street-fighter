@@ -1,3 +1,4 @@
+import os.path
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -7,17 +8,59 @@ import time
 import cv2
 import optuna
 import numpy as np
+import os
 import tensorflow as tf
 
 from gym import Env
 from gym.spaces import MultiBinary, Box
 from stable_baselines import PPO2
 from stable_baselines.common.evaluation import evaluate_policy
-# from stable_baselines.common.monitor import Monitor
+from stable_baselines.bench.monitor import Monitor
 from stable_baselines.common.vec_env import DummyVecEnv, VecFrameStack
 
 GAME_ITERATIONS = 1
 
+# for hyperparameter optimization
+LOG_DIR = "./logs/"
+OPT_DIR = "./opt/"
+
+
+# Function to return test hyperparameters
+def optimize_ppo(trial):
+    return{
+        'n_steps': trial.suggest_int('n_steps', 2048, 8192),
+        'gamma': trial.suggest_loguniform('gamma', 0.8, 0.9999),
+        'learning_rate': trial.suggest_loguniform('learning_rate', 1e-5, 1e-4),
+        #'clip_range': trial.suggest_uniform('clip_range', 0.1, 0.4),
+        #'gae_lambda': trial.suggest_int('gae_lambda', 0.8, 0.99)
+    }
+
+# training
+def optimize_agent(trial):
+    try:
+        model_params = optimize_ppo(trial)
+
+        #enviroment
+        env = StreetFighter()
+        env = Monitor(env, LOG_DIR)
+        env = DummyVecEnv([lambda: env])
+        env = VecFrameStack(env, 4)
+
+        #algorithm
+        model = PPO2('CnnPolicy', env, tensorboard_log=LOG_DIR, verbose=0, **model_params)
+        model.learn(total_timesteps=300) # for training needs much more, like 100k
+        #eval
+        mean_reward, _ = evaluate_policy(model, env, n_eval_episodes=5)
+        env.close()
+
+        SAVE_PATH = os.path.join(OPT_DIR, 'trial_{}_bes_model'.format(trial.number))
+        model.save(SAVE_PATH)
+
+        return mean_reward
+
+    except Exception as e:
+        print(e)
+        return -1000
 
 class StreetFighter(Env):
 
@@ -33,6 +76,7 @@ class StreetFighter(Env):
 
     def reset(self):
         obs = self.game.reset()
+        obs = self.preprocess(obs)
         self.previous_frame = obs
         self.score = 0
         return obs
@@ -75,5 +119,7 @@ class StreetFighter(Env):
 
 
 if __name__ == "__main__":
-    Game = StreetFighter()
-    Game.run()
+    #Game = StreetFighter()
+    #Game.run()
+    study = optuna.create_study(direction='maximize'))
+    study.optimize(optimize_agent, n_trials=10, n_jobs=1)
