@@ -5,32 +5,18 @@ from tf_agents.replay_buffers import tf_uniform_replay_buffer
 warnings.filterwarnings("ignore")
 
 import retro
-import time
 import cv2
-import optuna
 import numpy as np
 import tensorflow as tf
-import retrowrapper
-import imageio
+
 
 
 from tf_agents.agents.dqn import dqn_agent
-from tf_agents.drivers import py_driver
-from tf_agents.environments import suite_gym
-from tf_agents.environments import tf_py_environment
-from tf_agents.eval import metric_utils
 from tf_agents.metrics import tf_metrics
-from tf_agents.networks import sequential_layer  # check later if _layer
-from tf_agents.policies import py_tf_eager_policy
-from tf_agents.policies import random_tf_policy
-# from tf_agents.replay_buffers import reverb_replay_buffer
-# from tf_agents.replay_buffers import reverb_utils
 from tf_agents.trajectories import trajectory
-from tf_agents.specs import tensor_spec
 from tf_agents.utils import common
 
 from tf_agents.environments import py_environment
-from tf_agents.environments import tf_environment
 from tf_agents.environments import tf_py_environment
 from tf_agents.trajectories import time_step as ts
 from tf_agents.environments import utils
@@ -41,18 +27,12 @@ from tf_agents.specs import array_spec
 
 from gym import Env
 from gym.spaces import MultiBinary, Box
-from stable_baselines import PPO2
-from stable_baselines.common.evaluation import evaluate_policy
-# from stable_baselines.common.monitor import Monitor
-from stable_baselines.common.vec_env import DummyVecEnv, VecFrameStack
-
-import abc
 
 import matplotlib.pyplot as plt
 
 GAME_ITERATIONS = 1
 
-num_iterations = 200  # @param {type:"integer"}
+num_iterations = 10 # @param {type:"integer"}
 
 initial_collect_steps = 100  # @param {type:"integer"}
 collect_steps_per_iteration = 1  # @param {type:"integer"}
@@ -60,19 +40,22 @@ replay_buffer_max_length = 100000  # @param {type:"integer"}
 
 batch_size = 64  # @param {type:"integer"}
 learning_rate = 1e-3  # @param {type:"number"}
-log_interval = 200  # @param {type:"integer"}
+log_interval = 1  # @param {type:"integer"}
 
 num_eval_episodes = 10  # @param {type:"integer"}
 eval_interval = 1000  # @param {type:"integer"}
 
-#helpers
+
+# helpers
 replay_buffer = None
+
 
 def convertMBtoINT(action):
     res = 0
     for i in range(len(action)):
         res += action[i] * pow(2, i)
     return res
+
 
 def convertINTtoMB(action, size = 12):
     res = np.zeros(size)
@@ -100,7 +83,7 @@ def compute_avg_return(environment, policy, num_episodes=10):
     return avg_return.numpy()[0]
 
 
-### needs to implement interface
+# needs to implement interface
 class StreetEnv(py_environment.PyEnvironment):
 
     def __init__(self):
@@ -119,34 +102,14 @@ class StreetEnv(py_environment.PyEnvironment):
         self._observation_spec = array_spec.BoundedArraySpec(
             shape=(84, 84, 1), dtype=np.uint8, minimum=0, maximum=255, name='observation')
 
-        ###self._state = 0
         self._episode_ended = False
 
     def render(self):
         self.game.render()
 
-    #def reset(self):
-    #    """Return initial_time_step."""
-    #    self._current_time_step = self._reset()
-    #    return self._current_time_step
-
-    #def step(self, action):
-    #    """Apply action and return new time_step."""
-    #    if self._current_time_step is None:
-    #        return self.reset()
-    #    self._current_time_step = self._step(action)
-    #    return self._current_time_step
-
-    #def current_time_step(self):
-    #    return self._current_time_step
-
-    #def time_step_spec(self):
-    #    """Return time_step_spec."""
-
     def observation_spec(self):
         """Return observation_spec."""
         return self._observation_spec
-
 
     def action_spec(self):
         """Return action_spec."""
@@ -160,14 +123,8 @@ class StreetEnv(py_environment.PyEnvironment):
         self.previous_frame = obs
         self.score = 0
         self._episode_ended = False
-        #self.game.close()
-        #self.game = retro.make(game="StreetFighterIISpecialChampionEdition-Genesis",
-        #                       use_restricted_actions=retro.Actions.FILTERED)
 
         return ts.restart(obs)
-        #return ts.TimeStep(ts.StepType.FIRST, 0, 0, obs)
-
-
 
     def _step(self, action):
         """Apply action and return new time_step."""
@@ -199,14 +156,13 @@ class StreetEnv(py_environment.PyEnvironment):
         return channels
 
 
-
-
 def dense_layer(num_units):
     return tf.keras.layers.Dense(
         num_units,
         activation=tf.keras.activations.relu,
         kernel_initializer=tf.keras.initializers.VarianceScaling(
             scale=2.0, mode='fan_in', distribution='truncated_normal'))
+
 
 def collect_step(environment, policy):
     time_step = environment.current_time_step()
@@ -217,8 +173,7 @@ def collect_step(environment, policy):
     # Add trajectory to the replay buffer
     replay_buffer.add_batch(traj)
 
-#for _ in range(1000):
-#        collect_step(train_env, tf_agent.collect_policy)
+
 @tf.function
 def train_function():
     iterator = iter(dataset)
@@ -228,27 +183,29 @@ def train_function():
 
     final_time_step, policy_state = driver.run()
 
-    for i in range(1000):
+    for i in range(100):
         final_time_step, _ = driver.run(final_time_step, policy_state)
 
     episode_len = []
     step_len = []
+    res_loss = []
     for i in range(num_iterations):
         print(i)
         final_time_step, _ = driver.run(final_time_step, policy_state)
-        # for _ in range(1):
-        #    collect_step(train_env, tf_agent.collect_policy)
+        for _ in range(collect_steps_per_iteration):
+            collect_step(train_env, tf_agent.collect_policy)
 
         experience, _ = next(iterator)
         train_loss = tf_agent.train(experience=experience)
 
         step = tf_agent.train_step_counter
 
-        #if step % log_interval == 0:
-        print('step = {0}: loss = {1}'.format(step, train_loss.loss))
-        episode_len.append(train_metrics[3].result())
-        step_len.append(step)
-        print('Average episode length: {}'.format(train_metrics[3].result()))
+        if step.eval() % log_interval == 0:
+        #print('step = {0}: loss = {1}'.format(step, train_loss.loss))
+            episode_len.append(train_metrics[3].result())
+            step_len.append(step)
+        res_loss.append(train_loss.loss)
+        #rint('Average episode length: {}'.format(train_metrics[3].result()))
 
         # problem with eval. cant have two enviroments at one time
     #   if step % eval_interval == 0:
@@ -258,7 +215,7 @@ def train_function():
 
     #env.close()
     print("Train end")
-    return
+    return res_loss
 
 
 def demo(eval_env, eval_py_env, policy, sess):
@@ -280,23 +237,14 @@ def demo(eval_env, eval_py_env, policy, sess):
 if __name__ == "__main__":
     sess = tf.compat.v1.Session()
     #tf.compat.v1.enable_eager_execution()
+
     tf.compat.v1.enable_resource_variables()
-    # Game = StreetFighter()
-    # Game.run()
-    # print(Game.game.action_space.sample())
-
-    # import tensorflow as tf
-
-    # print(tf.__version__)
-
     env = StreetEnv()
-    # eval_py_env = StreetEnv()
 
     # this line ensures, the env is correctly setup, for now commented
     # utils.validate_py_environment(env, episodes=5)
 
     train_env = tf_py_environment.TFPyEnvironment(env)
-    # eval_env = tf_py_environment.TFPyEnvironment(eval_py_env)
 
     fc_layer_params = (100,)
 
@@ -355,8 +303,15 @@ if __name__ == "__main__":
     sess.run(init)
 
     with sess.as_default():
-        train_function()
+        #with tf.device('/device:GPU:0'):
+        loss_story = train_function()
 
+        # trying to get learning data
+            #env.game.close()
+            #print(loss_story[0].eval())
+            #print(step_len[0].eval())
+
+    #env.game.close()
     env.game.close()
 
     eval_py_env = StreetEnv()
@@ -364,5 +319,3 @@ if __name__ == "__main__":
 
     demo(eval_env, eval_py_env, tf_agent.policy, sess)
 
-
-    #train_env = tf_py_environment.TFPyEnvironment(Game.game)
