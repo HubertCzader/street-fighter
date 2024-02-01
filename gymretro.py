@@ -40,7 +40,7 @@ replay_buffer_max_length = 100000  # @param {type:"integer"}
 
 batch_size = 64  # @param {type:"integer"}
 learning_rate = 1e-3  # @param {type:"number"}
-log_interval = 1  # @param {type:"integer"}
+log_interval = 200  # @param {type:"integer"}
 
 num_eval_episodes = 10  # @param {type:"integer"}
 eval_interval = 1000  # @param {type:"integer"}
@@ -48,6 +48,8 @@ eval_interval = 1000  # @param {type:"integer"}
 
 # helpers
 replay_buffer = None
+driver = None
+tf_agent = None
 
 
 def convertMBtoINT(action):
@@ -178,6 +180,8 @@ def collect_step(environment, policy):
 def train_function():
     iterator = iter(dataset)
 
+    #print(iterator.eval())
+
     tf_agent.train = common.function(tf_agent.train)
     tf_agent.train_step_counter.assign(0)
 
@@ -200,11 +204,14 @@ def train_function():
 
         step = tf_agent.train_step_counter
 
-        if step.eval() % log_interval == 0:
+        #if step.eval() % log_interval == 0:
         #print('step = {0}: loss = {1}'.format(step, train_loss.loss))
-            episode_len.append(train_metrics[3].result())
-            step_len.append(step)
+        #    episode_len.append(train_metrics[3].result())
+         #   step_len.append(step)
+
         res_loss.append(train_loss.loss)
+        #driver.
+
         #rint('Average episode length: {}'.format(train_metrics[3].result()))
 
         # problem with eval. cant have two enviroments at one time
@@ -229,6 +236,7 @@ def demo(eval_env, eval_py_env, policy, sess):
               #  print(time_step.is_last().eval())
                 action_step = policy.action(time_step)
                 time_step = eval_env.step(action_step.action)
+                #print(time_step)
                 eval_py_env.render()
                 #time.sleep(0.01)
 
@@ -288,7 +296,7 @@ if __name__ == "__main__":
     ]
 
     dataset = replay_buffer.as_dataset(
-        num_parallel_calls=1,
+        num_parallel_calls=0,
         sample_batch_size=batch_size,
         num_steps=2).prefetch(3)
 
@@ -307,9 +315,9 @@ if __name__ == "__main__":
         loss_story = train_function()
 
         # trying to get learning data
-            #env.game.close()
-            #print(loss_story[0].eval())
-            #print(step_len[0].eval())
+       # env.game.close()
+       # print(loss_story[0].eval())
+           # print(step_len[0].eval())
 
     #env.game.close()
     env.game.close()
